@@ -87,6 +87,7 @@ async def async_quiz_task(chat_id: int, status_msg_id: int):
     })
 
 # --- КОМАНДЫ БОТА ---
+
 @dp.message(Command("generate_quiz"))
 async def admin_start_quiz(message: types.Message):
     if message.chat.type not in ['group', 'supergroup']:
@@ -99,7 +100,9 @@ async def admin_start_quiz(message: types.Message):
         return
 
     status_msg = await message.answer("🔄 *Sun'iy intellekt savol o'ylayapti, kuting...*")
-    asyncio.create_task(async_quiz_task(message.chat.id, status_msg.message_id))
+    
+    # Ждем выполнения задачи напрямую, чтобы серверлесс-функция Vercel не засыпала
+    await async_quiz_task(message.chat.id, status_msg.message_id)
 
 @dp.poll_answer()
 async def handle_poll_answer(poll_answer: types.PollAnswer):
@@ -140,6 +143,7 @@ async def show_stats(message: types.Message):
         await message.answer("Hozircha bazada hech qanday test yo'q.")
     else:
         await message.answer(text, parse_mode="Markdown")
+
 
 # --- ВЕБХУК ДЛЯ VERCEL ---
 @app.post("/webhook")
