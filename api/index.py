@@ -1,9 +1,8 @@
 import os
 import json
 import aiohttp
-import asyncio
 from fastapi import FastAPI, Request, Response
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, Router
 from aiogram.filters import Command
 from aiogram.types import BotCommand, BotCommandScopeAllChatAdministrators
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -16,6 +15,7 @@ MONGO_URL = os.getenv("MONGO_URL")
 app = FastAPI()
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+router = Router()
 
 # --- ПОДКЛЮЧЕНИЕ К MONGODB ---
 cluster = AsyncIOMotorClient(MONGO_URL)
@@ -43,7 +43,6 @@ async def generate_ai_quiz():
         "Eslatma: correct_id 0 dan 3 gacha bo'lgan to'g'ri javob indeksi bo'lsin."
     )
     
-    # Используем ультрабыструю модель Llama 3.2 3B
     model = "meta-llama/llama-3.2-3b-instruct:free"
     data = {
         "model": model, 
@@ -52,16 +51,16 @@ async def generate_ai_quiz():
     
     try:
         async with aiohttp.ClientSession() as session:
-            print(f"[AI] Отправка запроса в OpenRouter к модели {model}...")
+            print(f"[AI] Запрос к модели {model}...")
             async with session.post(url, headers=headers, json=data, timeout=8) as response:
                 if response.status != 200:
                     raw_err = await response.text()
-                    print(f"[AI] Ошибка OpenRouter. Статус: {response.status}. Ответ: {raw_err}")
+                    print(f"[AI] Ошибка OpenRouter {response.status}: {raw_err}")
                     return None
                     
                 result = await response.json()
                 content = result['choices'][0]['message']['content'].strip()
-                print(f"[AI] Ответ от ИИ получен: {content}")
+                print(f"[AI] Сырой ответ: {content}")
                 
                 if "```" in content:
                     content = content.split("```")[1]
@@ -70,13 +69,14 @@ async def generate_ai_quiz():
                 
                 return json.loads(content.strip())
     except Exception as e:
-        print(f"[AI] Исключение при запросе к ИИ: {e}")
+        print(f"[AI] Ошибка генерации: {e}")
         return None
 
-# --- КОМАНДЫ БОТА ---
-@dp.message(Command("generate_quiz"))
+# --- ХЭНДЛЕРЫ КОМАНД ---
+
+@router.message(Command("generate_quiz"))
 async def admin_start_quiz(message: types.Message):
-    print(f"[BOT] Получена команда /generate_quiz в чате {message.chat.id}")
+    print(f"[ХЭНДЛЕР] Команда вызвана пользователем {message.from_user.id} в чате {message.chat.id}")
     
     if message.chat.type not in ['group', 'supergroup']:
         await message.answer("Bu buyruqni faqat guruhda ishlatish mumkin!")
@@ -88,18 +88,17 @@ async def admin_start_quiz(message: types.Message):
             await message.answer("Sizda guruh administratori huquqlari yo'q!")
             return
     except Exception as e:
-        print(f"[BOT] Ошибка проверки прав пользователя: {e}")
+        print(f"[ХЭНДЛЕР] Ошибка проверки прав: {e}")
         return
 
     status_msg = await message.answer("🔄 *Sun'iy intellekt savol o'ylayapti, kuting...*")
     
-    # Прямое ожидание генерации
     quiz_data = await generate_ai_quiz()
     
     try:
         await bot.delete_message(chat_id=message.chat.id, message_id=status_msg.message_id)
-    except Exception as e:
-        print(f"[BOT] Не удалось удалить статус-сообщение: {e}")
+    except:
+        pass
 
     if not quiz_data:
         await message.answer("❌ Xatolik yuz berdi. Qayta urinib ko'ring.")
@@ -121,12 +120,12 @@ async def admin_start_quiz(message: types.Message):
             "question": quiz_data["question"],
             "correct_id": int(quiz_data["correct_id"])
         })
-        print("[BOT] Викторина успешно отправлена в группу и сохранена в БД")
+        print("[ХЭНДЛЕР] Опрос успешно отправлен!")
     except Exception as e:
-        print(f"[BOT] Ошибка при отправке пула или сохранении в БД: {e}")
+        print(f"[ХЭНДЛЕР] Ошибка отправки пула: {e}")
 
 
-@dp.poll_answer()
+@router.poll_answer()
 async def handle_poll_answer(poll_answer: types.PollAnswer):
     poll_id = poll_answer.poll_id
     quiz = await quizzes_collection.find_one({"_id": poll_id})
@@ -143,7 +142,7 @@ async def handle_poll_answer(poll_answer: types.PollAnswer):
         )
 
 
-@dp.message(Command("stats"))
+@router.message(Command("stats"))
 async def show_stats(message: types.Message):
     if message.chat.type != 'private':
         await message.answer("Statistikani faqat botning o'zida (Lichka) ko'rishingiz mumkin!")
@@ -167,16 +166,21 @@ async def show_stats(message: types.Message):
     else:
         await message.answer(text, parse_mode="Markdown")
 
+# Регистрируем роутер в диспетчере
+dp.include_router(router)
 
 # --- ВЕБХУК ДЛЯ VERCEL ---
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     try:
         update_dict = await request.json()
+        print(f"[ВЕБХУК] Входящий апдейт от ТГ: {json.dumps(update_dict)}")
+        
         update = types.Update(**update_dict)
         await dp.feed_update(bot, update)
+        
     except Exception as e:
-        print(f"[WEBHOOK ERROR] Ошибка обработки апдейта: {e}")
+        print(f"[ВЕБХУК ОШИБКА] Ошибка парсинга или обработки: {e}")
         
     return Response(status_code=200)
 
@@ -189,6 +193,5 @@ async def index():
             scope=BotCommandScopeAllChatAdministrators()
         )
     except Exception as e:
-        print(f"Ошибка menu: {e}")
+        print(f"Ошибка меню команд: {e}")
     return {"status": "Бот запущен на Vercel!"}
-
