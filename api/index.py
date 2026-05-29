@@ -1,8 +1,7 @@
 import os
 import json
 import aiohttp
-import asyncio
-from fastapi import FastAPI, Request, Response, BackgroundTasks
+from fastapi import FastAPI, Request, Response
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import BotCommand, BotCommandScopeAllChatAdministrators
@@ -43,84 +42,39 @@ async def generate_ai_quiz():
         "Eslatma: correct_id 0 dan 3 gacha bo'lgan to'g'ri javob indeksi bo'lsin."
     )
     
-    # Каскад из трех бесплатных моделей с автопереключением
-    models_to_try = [
-        "deepseek/deepseek-v4-flash:free",
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "meta-llama/llama-3.2-3b-instruct:free"
-    ]
+    # Используем сверхбыструю Llama 3.2 3B, которая выдает ответ моментально
+    model = "meta-llama/llama-3.2-3b-instruct:free"
     
-    async with aiohttp.ClientSession() as session:
-        for model in models_to_try:
-            print(f"Пытаюсь сгенерировать через модель: {model}")
-            data = {
-                "model": model, 
-                "messages": [{"role": "user", "content": prompt}]
-            }
-            
-            try:
-                # Даем модели 25 секунд на ответ в фоновом режиме
-                async with session.post(url, headers=headers, json=data, timeout=25) as response:
-                    if response.status != 200:
-                        print(f"Модель {model} выдала ошибку со статусом: {response.status}. Переключаюсь...")
-                        continue
-                        
-                    result = await response.json()
-                    if 'choices' not in result:
-                        print(f"Модель {model} вернула некорректный ответ. Переключаюсь...")
-                        continue
-                        
-                    content = result['choices'][0]['message']['content'].strip()
-                    print(f"Успешно! Ответ от {model}: {content}")
-                    
-                    # Очищаем markdown-теги, если ИИ их добавил
-                    if "```" in content:
-                        content = content.split("```")[1]
-                        if content.startswith("json"):
-                            content = content[4:]
-                    
-                    return json.loads(content.strip())
-                    
-            except Exception as e:
-                print(f"Ошибка или таймаут модели {model}: {e}. Пробую следующую...")
-                continue
-                
-    print("Ни одна из нейросетей не ответила успешно за отведенное время.")
-    return None
-
-
-# --- ФОНОВАЯ ЗАДАЧА ---
-async def async_quiz_task(chat_id: int, status_msg_id: int):
-    quiz_data = await generate_ai_quiz()
+    data = {
+        "model": model, 
+        "messages": [{"role": "user", "content": prompt}]
+    }
+    
     try:
-        await bot.delete_message(chat_id=chat_id, message_id=status_msg_id)
-    except:
-        pass
-
-    if not quiz_data:
-        await bot.send_message(chat_id=chat_id, text="❌ Xatolik yuz berdi. Qayta urinib ko'ring.")
-        return
-
-    poll_msg = await bot.send_poll(
-        chat_id=chat_id,
-        question=quiz_data["question"],
-        options=quiz_data["options"],
-        type='quiz',
-        correct_option_id=int(quiz_data["correct_id"]),
-        is_anonymous=False
-    )
-    
-    await quizzes_collection.insert_one({
-        "_id": poll_msg.poll.id,
-        "chat_id": chat_id,
-        "question": quiz_data["question"],
-        "correct_id": int(quiz_data["correct_id"])
-    })
-
+        async with aiohttp.ClientSession() as session:
+            # Жесткий таймаут 7 секунд, чтобы уложиться в рамки Vercel
+            async with session.post(url, headers=headers, json=data, timeout=7) as response:
+                if response.status != 200:
+                    print(f"OpenRouter Error Status: {response.status}")
+                    return None
+                    
+                result = await response.json()
+                content = result['choices'][0]['message']['content'].strip()
+                print(f"ИИ успешно ответил: {content}")
+                
+                if "```" in content:
+                    content = content.split("```")[1]
+                    if content.startswith("json"):
+                        content = content[4:]
+                
+                return json.loads(content.strip())
+    except Exception as e:
+        print(f"Ошибка ИИ: {e}")
+        return None
 
 # --- КОМАНДЫ БОТА ---
 @dp.message(Command("generate_quiz"))
-async def admin_start_quiz(message: types.Message, background_tasks: BackgroundTasks):
+async def admin_start_quiz(message: types.Message):
     if message.chat.type not in ['group', 'supergroup']:
         await message.answer("Bu buyruqni faqat guruhda ishlatish mumkin!")
         return
@@ -130,8 +84,40 @@ async def admin_start_quiz(message: types.Message, background_tasks: BackgroundT
         await message.answer("Sizda guruh administratori huquqlari yo'q!")
         return
 
+    # 1. Отправляем статусное сообщение
     status_msg = await message.answer("🔄 *Sun'iy intellekt savol o'ylayapti, kuting...*")
-    background_tasks.add_task(async_quiz_task, message.chat.id, status_msg.message_id)
+    
+    # 2. ПРЯМО ТУТ ждем ответа от ИИ (Не в фоне!). Процесс займет 2-3 секунды.
+    quiz_data = await generate_ai_quiz()
+    
+    # 3. Удаляем статусное сообщение
+    try:
+        await bot.delete_message(chat_id=message.chat.id, message_id=status_msg.message_id)
+    except:
+        pass
+
+    # 4. Если ИИ не ответил вовремя
+    if not quiz_data:
+        await message.answer("❌ Xatolik yuz berdi. Qayta urinib ko'ring.")
+        return
+
+    # 5. Отправляем викторину
+    poll_msg = await bot.send_poll(
+        chat_id=message.chat.id,
+        question=quiz_data["question"],
+        options=quiz_data["options"],
+        type='quiz',
+        correct_option_id=int(quiz_data["correct_id"]),
+        is_anonymous=False
+    )
+    
+    # 6. Сохраняем в базу данных
+    await quizzes_collection.insert_one({
+        "_id": poll_msg.poll.id,
+        "chat_id": message.chat.id,
+        "question": quiz_data["question"],
+        "correct_id": int(quiz_data["correct_id"])
+    })
 
 
 @dp.poll_answer()
@@ -178,10 +164,12 @@ async def show_stats(message: types.Message):
 
 # --- ВЕБХУК ДЛЯ VERCEL ---
 @app.post("/webhook")
-async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
+async def telegram_webhook(request: Request):
     update_dict = await request.json()
     update = types.Update(**update_dict)
-    await dp.feed_update(bot, update, background_tasks=background_tasks)
+    
+    # Скрипт выполнит генерацию опроса и только потом вернет ответ 200
+    await dp.feed_update(bot, update)
     return Response(status_code=200)
 
 
@@ -193,7 +181,6 @@ async def index():
             scope=BotCommandScopeAllChatAdministrators()
         )
     except Exception as e:
-        print(f"Ошибка установки меню команд: {e}")
-        
+        print(f"Ошибка menu: {e}")
     return {"status": "Бот запущен на Vercel!"}
 
