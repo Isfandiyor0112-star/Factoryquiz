@@ -31,10 +31,11 @@ async def generate_ai_quiz():
         "Authorization": f"Bearer {OPENROUTER_KEY}",
         "Content-Type": "application/json"
     }
+    
     prompt = (
         "Ishchilar uchun texnika xavfsizligi, yong'in xavfsizligi yoki birinchi yordamga oid "
         "tasodifiy bitta qiziqarli test savolini o'zbek tilida yarat. "
-        "Javobni FAQAT mana bu JSON formatda qaytar, boshqa hech narsa yozma:\n"
+        "Javobni FAQAT mana bu JSON formatda qaytar, boshqa hech qanday tekst, kirish so'zi yoki markdown belgilari yozma:\n"
         "{\n"
         '  "question": "Savol matni",\n'
         '  "options": ["1-javob", "2-javob", "3-javob", "4-javob"],\n'
@@ -42,21 +43,52 @@ async def generate_ai_quiz():
         "}\n"
         "Eslatma: correct_id 0 dan 3 gacha bo'lgan to'g'ri javob indeksi bo'lsin."
     )
-    data = {"model": MODEL_ID, "messages": [{"role": "user", "content": prompt}]}
     
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=data, timeout=15) as response:
-                result = await response.json()
-                content = result['choices'][0]['message']['content'].strip()
-                if content.startswith("```"):
-                    content = content.split("```")[1]
-                    if content.startswith("json"):
-                        content = content[4:]
-                return json.loads(content.strip())
-    except Exception as e:
-        print(f"ИИ Error: {e}")
-        return None
+    # Наш каскад из двух бесплатных моделей
+    models_to_try = [
+        "deepseek/deepseek-v4-flash:free",
+        "meta-llama/llama-3.3-70b-instruct:free"
+    ]
+    
+    async with aiohttp.ClientSession() as session:
+        for model in models_to_try:
+            print(f"Пытаюсь сгенерировать через модель: {model}")
+            data = {
+                "model": model, 
+                "messages": [{"role": "user", "content": prompt}]
+            }
+            
+            try:
+                # Согласно докам Vercel, у нас есть куча времени,
+                # поэтому ставим щедрый таймаут в 60 секунд на одну модель!
+                async with session.post(url, headers=headers, json=data, timeout=60) as response:
+                    if response.status != 200:
+                        print(f"Модель {model} выдала ошибку со статусом: {response.status}. Переключаюсь...")
+                        continue
+                        
+                    result = await response.json()
+                    if 'choices' not in result:
+                        print(f"Модель {model} вернула некорректный ответ. Переключаюсь...")
+                        continue
+                        
+                    content = result['choices'][0]['message']['content'].strip()
+                    print(f"Успешно! Ответ от {model}: {content}")
+                    
+                    # Очищаем markdown-теги, если они есть
+                    if "```" in content:
+                        content = content.split("```")[1]
+                        if content.startswith("json"):
+                            content = content[4:]
+                    
+                    return json.loads(content.strip())
+                    
+            except Exception as e:
+                print(f"Ошибка или таймаут модели {model}: {e}. Пробую следующую...")
+                continue
+                
+    print("Ни одна из нейросетей не ответила успешно за отведенное время.")
+    return None
+
 
 # --- ФОНОВАЯ ЗАДАЧА ---
 async def async_quiz_task(chat_id: int, status_msg_id: int):
