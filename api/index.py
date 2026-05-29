@@ -24,6 +24,7 @@ quizzes_collection = db["quizzes"]
 answers_collection = db["answers"]
 
 # --- ФУНКЦИЯ ЗАПРОСА К ИИ ---
+# --- ФУНКЦИЯ ЗАПРОСА К ИИ ---
 async def generate_ai_quiz():
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
@@ -43,10 +44,11 @@ async def generate_ai_quiz():
         "Eslatma: correct_id 0 dan 3 gacha bo'lgan to'g'ri javob indeksi bo'lsin."
     )
     
-    # Каскад бесплатных моделей из твоего списка
+    # Каскад бесплатных моделей: если первая тормозит или падает, пробуем следующую
     models_to_try = [
         "deepseek/deepseek-v4-flash:free",
-        "meta-llama/llama-3.3-70b-instruct:free"
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "meta-llama/llama-3.2-3b-instruct:free"
     ]
     
     async with aiohttp.ClientSession() as session:
@@ -58,8 +60,9 @@ async def generate_ai_quiz():
             }
             
             try:
-                # Ставим 4.5 секунды на модель, чтобы суммарно уложиться в 10 секунд бесплатного тарифа Vercel
-                async with session.post(url, headers=headers, json=data, timeout=4.5) as response:
+                # Ставим таймаут 25 секунд. Поскольку используем BackgroundTasks,
+                # это время будет честно выделено на выполнение задачи в фоне.
+                async with session.post(url, headers=headers, json=data, timeout=25) as response:
                     if response.status != 200:
                         print(f"Модель {model} выдала ошибку со статусом: {response.status}. Переключаюсь...")
                         continue
@@ -74,10 +77,12 @@ async def generate_ai_quiz():
                     
                     # Очищаем markdown-теги, если ИИ их добавил
                     if "```" in content:
-                        content = content.split("```")[1]
+                        content = content.split("
+```")[1]
                         if content.startswith("json"):
                             content = content[4:]
                     
+                    # Финальная очистка и возврат
                     return json.loads(content.strip())
                     
             except Exception as e:
