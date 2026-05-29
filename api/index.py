@@ -2,7 +2,7 @@ import os
 import json
 import aiohttp
 import asyncio
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, BackgroundTasks
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import BotCommand, BotCommandScopeAllChatAdministrators
@@ -12,7 +12,6 @@ from motor.motor_asyncio import AsyncIOMotorClient
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
 MONGO_URL = os.getenv("MONGO_URL")
-MODEL_ID = "meta-llama/llama-3.3-70b-instruct:free"
 
 app = FastAPI()
 bot = Bot(token=BOT_TOKEN)
@@ -44,7 +43,7 @@ async def generate_ai_quiz():
         "Eslatma: correct_id 0 dan 3 gacha bo'lgan to'g'ri javob indeksi bo'lsin."
     )
     
-    # Наш каскад из двух бесплатных моделей
+    # Каскад бесплатных моделей из твоего списка
     models_to_try = [
         "deepseek/deepseek-v4-flash:free",
         "meta-llama/llama-3.3-70b-instruct:free"
@@ -59,9 +58,8 @@ async def generate_ai_quiz():
             }
             
             try:
-                # Согласно докам Vercel, у нас есть куча времени,
-                # поэтому ставим щедрый таймаут в 60 секунд на одну модель!
-                async with session.post(url, headers=headers, json=data, timeout=60) as response:
+                # Ставим 4.5 секунды на модель, чтобы суммарно уложиться в 10 секунд бесплатного тарифа Vercel
+                async with session.post(url, headers=headers, json=data, timeout=4.5) as response:
                     if response.status != 200:
                         print(f"Модель {model} выдала ошибку со статусом: {response.status}. Переключаюсь...")
                         continue
@@ -74,7 +72,7 @@ async def generate_ai_quiz():
                     content = result['choices'][0]['message']['content'].strip()
                     print(f"Успешно! Ответ от {model}: {content}")
                     
-                    # Очищаем markdown-теги, если они есть
+                    # Очищаем markdown-теги, если ИИ их добавил
                     if "```" in content:
                         content = content.split("```")[1]
                         if content.startswith("json"):
@@ -118,10 +116,10 @@ async def async_quiz_task(chat_id: int, status_msg_id: int):
         "correct_id": int(quiz_data["correct_id"])
     })
 
-# --- КОМАНДЫ БОТА ---
 
+# --- КОМАНДЫ БОТА ---
 @dp.message(Command("generate_quiz"))
-async def admin_start_quiz(message: types.Message):
+async def admin_start_quiz(message: types.Message, background_tasks: BackgroundTasks):
     if message.chat.type not in ['group', 'supergroup']:
         await message.answer("Bu buyruqni faqat guruhda ishlatish mumkin!")
         return
@@ -133,8 +131,10 @@ async def admin_start_quiz(message: types.Message):
 
     status_msg = await message.answer("🔄 *Sun'iy intellekt savol o'ylayapti, kuting...*")
     
-    # Ждем выполнения задачи напрямую, чтобы серверлесс-функция Vercel не засыпала
-    await async_quiz_task(message.chat.id, status_msg.message_id)
+    # Легальный запуск тяжелой задачи в фоне через FastAPI.
+    # Мы мгновенно отвечаем Телеграму "200 OK", но Vercel дает процессу завершить генерацию.
+    background_tasks.add_task(async_quiz_task, message.chat.id, status_msg.message_id)
+
 
 @dp.poll_answer()
 async def handle_poll_answer(poll_answer: types.PollAnswer):
@@ -151,6 +151,7 @@ async def handle_poll_answer(poll_answer: types.PollAnswer):
             {"$set": {"user_name": user_name, "correct": is_correct}},
             upsert=True
         )
+
 
 @dp.message(Command("stats"))
 async def show_stats(message: types.Message):
@@ -179,12 +180,25 @@ async def show_stats(message: types.Message):
 
 # --- ВЕБХУК ДЛЯ VERCEL ---
 @app.post("/webhook")
-async def telegram_webhook(request: Request):
+async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     update_dict = await request.json()
-    update = types.Update(**update_dict)  # Исправлено на строчную букву
-    await dp.feed_update(bot, update)
+    update = types.Update(**update_dict)
+    
+    # Передаем background_tasks внутрь диспетчера aiogram, 
+    # чтобы хэндлер /generate_quiz мог его использовать
+    await dp.feed_update(bot, update, background_tasks=background_tasks)
     return Response(status_code=200)
+
 
 @app.get("/")
 async def index():
-    return {"status": "Бот запущен на Vercell!"}
+    # Автоматическая настройка меню команд в Telegram при открытии главной страницы
+    try:
+        await bot.set_my_commands(
+            [BotCommand(command="generate_quiz", description="AI test yaratish")],
+            scope=BotCommandScopeAllChatAdministrators()
+        )
+    except Exception as e:
+        print(f"Ошибка установки меню команд: {e}")
+        
+    return {"status": "Бот запущен на Vercel!"}
