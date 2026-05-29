@@ -151,4 +151,4 @@ async def telegram_webhook(request: Request):
 
 @app.get("/")
 async def index():
-    return {"status": "Бот запущен на Vercel!"}
+    return {"status": "Бот запущен на Vercell!"}
