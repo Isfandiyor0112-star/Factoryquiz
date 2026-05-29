@@ -24,7 +24,6 @@ quizzes_collection = db["quizzes"]
 answers_collection = db["answers"]
 
 # --- ФУНКЦИЯ ЗАПРОСА К ИИ ---
-# --- ФУНКЦИЯ ЗАПРОСА К ИИ ---
 async def generate_ai_quiz():
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
@@ -44,7 +43,7 @@ async def generate_ai_quiz():
         "Eslatma: correct_id 0 dan 3 gacha bo'lgan to'g'ri javob indeksi bo'lsin."
     )
     
-    # Каскад бесплатных моделей: если первая тормозит или падает, пробуем следующую
+    # Каскад из трех бесплатных моделей с автопереключением
     models_to_try = [
         "deepseek/deepseek-v4-flash:free",
         "meta-llama/llama-3.3-70b-instruct:free",
@@ -60,8 +59,7 @@ async def generate_ai_quiz():
             }
             
             try:
-                # Ставим таймаут 25 секунд. Поскольку используем BackgroundTasks,
-                # это время будет честно выделено на выполнение задачи в фоне.
+                # Даем модели 25 секунд на ответ в фоновом режиме
                 async with session.post(url, headers=headers, json=data, timeout=25) as response:
                     if response.status != 200:
                         print(f"Модель {model} выдала ошибку со статусом: {response.status}. Переключаюсь...")
@@ -77,12 +75,10 @@ async def generate_ai_quiz():
                     
                     # Очищаем markdown-теги, если ИИ их добавил
                     if "```" in content:
-                        content = content.split("
-```")[1]
+                        content = content.split("```")[1]
                         if content.startswith("json"):
                             content = content[4:]
                     
-                    # Финальная очистка и возврат
                     return json.loads(content.strip())
                     
             except Exception as e:
@@ -135,9 +131,6 @@ async def admin_start_quiz(message: types.Message, background_tasks: BackgroundT
         return
 
     status_msg = await message.answer("🔄 *Sun'iy intellekt savol o'ylayapti, kuting...*")
-    
-    # Легальный запуск тяжелой задачи в фоне через FastAPI.
-    # Мы мгновенно отвечаем Телеграму "200 OK", но Vercel дает процессу завершить генерацию.
     background_tasks.add_task(async_quiz_task, message.chat.id, status_msg.message_id)
 
 
@@ -188,16 +181,12 @@ async def show_stats(message: types.Message):
 async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     update_dict = await request.json()
     update = types.Update(**update_dict)
-    
-    # Передаем background_tasks внутрь диспетчера aiogram, 
-    # чтобы хэндлер /generate_quiz мог его использовать
     await dp.feed_update(bot, update, background_tasks=background_tasks)
     return Response(status_code=200)
 
 
 @app.get("/")
 async def index():
-    # Автоматическая настройка меню команд в Telegram при открытии главной страницы
     try:
         await bot.set_my_commands(
             [BotCommand(command="generate_quiz", description="AI test yaratish")],
@@ -207,3 +196,4 @@ async def index():
         print(f"Ошибка установки меню команд: {e}")
         
     return {"status": "Бот запущен на Vercel!"}
+
