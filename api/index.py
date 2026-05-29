@@ -3,11 +3,12 @@ import json
 import aiohttp
 import asyncio
 from fastapi import FastAPI, Request, Response
-from aiogram import Bot, Dispatcher, Types
+from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import BotCommand, BotCommandScopeAllChatAdministrators
 from motor.motor_asyncio import AsyncIOMotorClient
 
+# --- НАСТРОЙКИ ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
 MONGO_URL = os.getenv("MONGO_URL")
@@ -17,11 +18,13 @@ app = FastAPI()
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# --- ПОДКЛЮЧЕНИЕ К MONGODB ---
 cluster = AsyncIOMotorClient(MONGO_URL)
 db = cluster["quiz_bot_db"]
 quizzes_collection = db["quizzes"]
 answers_collection = db["answers"]
 
+# --- ФУНКЦИЯ ЗАПРОСА К ИИ ---
 async def generate_ai_quiz():
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
@@ -55,6 +58,7 @@ async def generate_ai_quiz():
         print(f"ИИ Error: {e}")
         return None
 
+# --- ФОНОВАЯ ЗАДАЧА ---
 async def async_quiz_task(chat_id: int, status_msg_id: int):
     quiz_data = await generate_ai_quiz()
     try:
@@ -82,8 +86,9 @@ async def async_quiz_task(chat_id: int, status_msg_id: int):
         "correct_id": int(quiz_data["correct_id"])
     })
 
+# --- КОМАНДЫ БОТА ---
 @dp.message(Command("generate_quiz"))
-async def admin_start_quiz(message: Types.Message):
+async def admin_start_quiz(message: types.Message):
     if message.chat.type not in ['group', 'supergroup']:
         await message.answer("Bu buyruqni faqat guruhda ishlatish mumkin!")
         return
@@ -97,7 +102,7 @@ async def admin_start_quiz(message: Types.Message):
     asyncio.create_task(async_quiz_task(message.chat.id, status_msg.message_id))
 
 @dp.poll_answer()
-async def handle_poll_answer(poll_answer: Types.PollAnswer):
+async def handle_poll_answer(poll_answer: types.PollAnswer):
     poll_id = poll_answer.poll_id
     quiz = await quizzes_collection.find_one({"_id": poll_id})
     if quiz:
@@ -113,7 +118,7 @@ async def handle_poll_answer(poll_answer: Types.PollAnswer):
         )
 
 @dp.message(Command("stats"))
-async def show_stats(message: Types.Message):
+async def show_stats(message: types.Message):
     if message.chat.type != 'private':
         await message.answer("Statistikani faqat botning o'zida (Lichka) ko'rishingiz mumkin!")
         return
@@ -136,10 +141,11 @@ async def show_stats(message: Types.Message):
     else:
         await message.answer(text, parse_mode="Markdown")
 
+# --- ВЕБХУК ДЛЯ VERCEL ---
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     update_dict = await request.json()
-    update = Types.Update(**update_dict)
+    update = types.Update(**update_dict)  # Исправлено на строчную букву
     await dp.feed_update(bot, update)
     return Response(status_code=200)
 
