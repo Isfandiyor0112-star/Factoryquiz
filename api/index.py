@@ -43,7 +43,7 @@ async def generate_ai_quiz():
         "Eslatma: correct_id 0 dan 3 gacha bo'lgan to'g'ri javob indeksi bo'lsin."
     )
     
-    model = "meta-llama/llama-3.2-3b-instruct:free"
+    model = "nvidia/nemotron-nano-12b-v2-vl:free"
     data = {
         "model": model, 
         "messages": [{"role": "user", "content": prompt}]
