@@ -46,7 +46,8 @@ async def generate_ai_quiz():
     model = "nvidia/nemotron-nano-12b-v2-vl:free"
     data = {
         "model": model, 
-        "messages": [{"role": "user", "content": prompt}]
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.2
     }
     
     try:
