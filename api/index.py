@@ -39,10 +39,13 @@ async def generate_ai_quiz():
     )
     
     user_prompt = (
-        "ProfPack zavodidagi ish jarayoniga mos 1 ta test savoli yarat. "
+        "ProfPack zavodidagi ish xavfsizligi bo'yicha aniq bir test savolini tuz. "
+        "Misol: 'Qog'oz presslash uskunasi bilan ishlashda qaysi himoya vositasi majburiy?' "
+        "Savol aniq, tushunarli va zavod muhitiga mos bo'lsin. "
         "Javobni FAQAT JSON formatda qaytar: "
         '{"question": "Savol matni", "options": ["A", "B", "C", "D"], "correct_id": 0}'
     )
+
     
     data = {
         "model": "nvidia/nemotron-nano-12b-v2-vl:free",
