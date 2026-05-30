@@ -31,29 +31,28 @@ async def generate_ai_quiz():
         "Content-Type": "application/json"
     }
     
-    # Теперь модель знает, КТО она и ГДЕ она
     system_prompt = (
-        "Sen 'ProfPack' qog'ozni qayta ishlash zavodining xavfsizlik bo'yicha kuzatuvchisisan. "
-        "Sening vazifang zavod xodimlariga birinchi yordam, yong'in xavfsizligi va ishlab chiqarish "
-        "texnika xavfsizligi bo'yicha realistik va qiziqarli test savollarini tuzishdir."
+        "Sen 'ProfPack' qog'ozni qayta ishlash zavodining xavfsizlik bo'yicha nazoratchisisan. "
+        "Sening vazifang zavod xodimlari uchun birinchi yordam, yong'in xavfsizligi va ishlab chiqarish "
+        "texnika xavfsizligi bo'yicha real va professional test savollarini o'zbek tilida tuzish."
     )
     
     user_prompt = (
-        "ProfPack zavodidagi ish xavfsizligi bo'yicha aniq bir test savolini tuz. "
-        "Misol: 'Qog'oz presslash uskunasi bilan ishlashda qaysi himoya vositasi majburiy?' "
-        "Savol aniq, tushunarli va zavod muhitiga mos bo'lsin. "
-        "Javobni FAQAT JSON formatda qaytar: "
-        '{"question": "Savol matni", "options": ["A", "B", "C", "D"], "correct_id": 0}'
+        "Zavoddagi ish jarayoniga oid (masalan: qog'oz pressi, stanoklar, yuk ko'taruvchilar, "
+        "yong'in xavfi yoki jarohatlanganda birinchi yordam) 1 ta qiziqarli va o'ziga xos test savolini o'ylab top. "
+        "DIQQAT: Mening misolimni so'zma-so'z nusxalama! Variantlar faqat bitta harf bo'lmasligi kerak, to'liq javob yozilsin. "
+        "Javobni FAQAT mana bu JSON formatida qaytar, boshqa hech qanday tekst qo'shma:\n"
+        '{"question": "Savol matni", "options": ["1-javob matni", "2-javob matni", "3-javob matni", "4-javob matni"], "correct_id": 0}'
     )
-
     
     data = {
-        "model": "nvidia/nemotron-nano-12b-v2-vl:free",
+        # Меняем модель на умную Gemma от Google
+        "model": "google/gemma-4-26b-a4b-it:free", 
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ],
-        "temperature": 0.3
+        "temperature": 0.4  # Чуть-чуть добавим сообразительности, но держим в узде
     }
     
     try:
@@ -62,13 +61,14 @@ async def generate_ai_quiz():
                 result = await response.json()
                 content = result['choices'][0]['message']['content'].strip()
                 
-                # Парсинг JSON
+                # Поиск и очистка JSON
                 start = content.find('{')
                 end = content.rfind('}') + 1
                 return json.loads(content[start:end])
     except Exception as e:
-        print(f"[AI] Ошибка генерации: {e}")
+        print(f"[AI] Oшибка генерации: {e}")
         return None
+
 
 # --- ХЭНДЛЕРЫ КОМАНД ---
 
