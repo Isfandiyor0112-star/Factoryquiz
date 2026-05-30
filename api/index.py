@@ -49,12 +49,19 @@ async def generate_ai_quiz():
     )
 
 
+        # Расширенный список выживших моделей (если первые забиты лимитами, бот пойдет дальше)
     models_to_try = [
         "google/gemma-4-26b-a4b-it:free",
         "openai/gpt-oss-120b:free",
         "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-        "nvidia/nemotron-nano-12b-v2-vl:free"
+        "nvidia/nemotron-nano-12b-v2-vl:free",
+        # --- ДОБАВЛЯЕМ СВЕЖИЕ РЕЗЕРВЫ (Они быстрые и были 200 OK на тесте) ---
+        "google/gemma-4-31b-it:free",
+        "openai/gpt-oss-20b:free",
+        "liquid/lfm-2.5-1.2b-instruct:free",
+        "nvidia/nemotron-nano-9b-v2:free"
     ]
+
     
     async with aiohttp.ClientSession() as session:
         for model in models_to_try:
@@ -70,7 +77,7 @@ async def generate_ai_quiz():
             
             try:
                 print(f"[AI] Запрос к модели: {model}")
-                async with session.post(url, headers=headers, json=data, timeout=3.5) as response:
+                async with session.post(url, headers=headers, json=data, timeout=4.5) as response:
                     
                     if response.status == 200:
                         print(f"[AI] {model} -> ✅ Статус 200 OK")
