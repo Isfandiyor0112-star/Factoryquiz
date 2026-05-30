@@ -31,44 +31,38 @@ async def generate_ai_quiz():
         "Content-Type": "application/json"
     }
     
-    prompt = (
-        "Ishchilar uchun texnika xavfsizligi, yong'in xavfsizligi yoki birinchi yordamga oid "
-        "tasodifiy bitta qiziqarli test savolini o'zbek tilida yarat. "
-        "Javobni FAQAT mana bu JSON formatda qaytar, boshqa hech qanday tekst, kirish so'zi yoki markdown belgilari yozma:\n"
-        "{\n"
-        '  "question": "Savol matni",\n'
-        '  "options": ["1-javob", "2-javob", "3-javob", "4-javob"],\n'
-        '  "correct_id": 0\n'
-        "}\n"
-        "Eslatma: correct_id 0 dan 3 gacha bo'lgan to'g'ri javob indeksi bo'lsin."
+    # Теперь модель знает, КТО она и ГДЕ она
+    system_prompt = (
+        "Sen 'ProfPack' qog'ozni qayta ishlash zavodining xavfsizlik bo'yicha kuzatuvchisisan. "
+        "Sening vazifang zavod xodimlariga birinchi yordam, yong'in xavfsizligi va ishlab chiqarish "
+        "texnika xavfsizligi bo'yicha realistik va qiziqarli test savollarini tuzishdir."
     )
     
-    model = "nvidia/nemotron-nano-12b-v2-vl:free"
+    user_prompt = (
+        "ProfPack zavodidagi ish jarayoniga mos 1 ta test savoli yarat. "
+        "Javobni FAQAT JSON formatda qaytar: "
+        '{"question": "Savol matni", "options": ["A", "B", "C", "D"], "correct_id": 0}'
+    )
+    
     data = {
-        "model": model, 
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.2
+        "model": "nvidia/nemotron-nano-12b-v2-vl:free",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        "temperature": 0.3
     }
     
     try:
         async with aiohttp.ClientSession() as session:
-            print(f"[AI] Запрос к модели {model}...")
-            async with session.post(url, headers=headers, json=data, timeout=8) as response:
-                if response.status != 200:
-                    raw_err = await response.text()
-                    print(f"[AI] Ошибка OpenRouter {response.status}: {raw_err}")
-                    return None
-                    
+            async with session.post(url, headers=headers, json=data, timeout=9) as response:
                 result = await response.json()
                 content = result['choices'][0]['message']['content'].strip()
-                print(f"[AI] Сырой ответ: {content}")
                 
-                if "```" in content:
-                    content = content.split("```")[1]
-                    if content.startswith("json"):
-                        content = content[4:]
-                
-                return json.loads(content.strip())
+                # Парсинг JSON
+                start = content.find('{')
+                end = content.rfind('}') + 1
+                return json.loads(content[start:end])
     except Exception as e:
         print(f"[AI] Ошибка генерации: {e}")
         return None
