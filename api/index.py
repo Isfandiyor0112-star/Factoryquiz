@@ -1,6 +1,7 @@
 import os
 import json
 import aiohttp
+import asyncio
 from fastapi import FastAPI, Request, Response
 from aiogram import Bot, Dispatcher, types, Router
 from aiogram.filters import Command
