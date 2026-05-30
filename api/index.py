@@ -49,19 +49,15 @@ async def generate_ai_quiz():
     )
 
 
-        # Расширенный список выживших моделей (если первые забиты лимитами, бот пойдет дальше)
+       # Максимально надежный и расширенный список моделей
     models_to_try = [
-        "google/gemma-4-26b-a4b-it:free",
-        "openai/gpt-oss-120b:free",
-        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-        "nvidia/nemotron-nano-12b-v2-vl:free",
-        # --- ДОБАВЛЯЕМ СВЕЖИЕ РЕЗЕРВЫ (Они быстрые и были 200 OK на тесте) ---
-        "google/gemma-4-31b-it:free",
-        "openai/gpt-oss-20b:free",
-        "liquid/lfm-2.5-1.2b-instruct:free",
-        "nvidia/nemotron-nano-9b-v2:free"
+        "meta-llama/llama-3-8b-instruct:free",        # Ультрабыстрая, стабильная, отличный JSON
+        "google/gemma-4-26b-a4b-it:free",              # Наш фаворит, если свободен
+        "nvidia/nemotron-nano-12b-v2-vl:free",         # Тот самый щит, который уже спасал
+        "mistralai/mistral-7b-instruct:free",          # Очень стабильный европеец
+        "openai/gpt-oss-120b:free",                    # Умная, но тяжелая
+        "openai/gpt-oss-20b:free"                      # Быстрее, чем старший брат
     ]
-
     
     async with aiohttp.ClientSession() as session:
         for model in models_to_try:
@@ -71,44 +67,49 @@ async def generate_ai_quiz():
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                "temperature": 0.3,
+                "temperature": 0.4, # Чуть подняли для уверенности
                 "max_tokens": 400
             }
             
             try:
                 print(f"[AI] Запрос к модели: {model}")
+                # Увеличиваем таймаут до 4.5 секунд на одну модель
                 async with session.post(url, headers=headers, json=data, timeout=4.5) as response:
                     
                     if response.status == 200:
                         print(f"[AI] {model} -> ✅ Статус 200 OK")
                         res_json = await response.json()
-                        content = res_json['choices'][0]['message']['content'].strip()
                         
+                        choices = res_json.get('choices', [])
+                        if not choices:
+                            continue
+                            
+                        raw_content = choices[0].get('message', {}).get('content')
+                        if not raw_content:
+                            continue
+                            
+                        content = raw_content.strip()
                         start = content.find('{')
                         end = content.rfind('}') + 1
                         
                         if start != -1 and end != 0:
                             quiz_json = json.loads(content[start:end])
-                            
                             opts = quiz_json.get("options", [])
                             if len(opts) == 4 and len(str(opts[0])) > 2:
-                                print(f"[AI] {model} -> Формат JSON валидный. Возвращаем!")
+                                print(f"[AI] {model} -> Успешный JSON!")
                                 return quiz_json
-                            else:
-                                print(f"[AI] {model} -> ⚠️ Брак (пустые варианты или буквы вместо текста)")
-                        else:
-                            print(f"[AI] {model} -> ❌ Текст не содержит JSON-структуру")
-                            
+                    
                     elif response.status == 429:
-                        print(f"[AI] {model} -> ❌ Ошибка 429 Лимит запросов (Too Many Requests)")
+                        print(f"[AI] {model} -> ❌ Ошибка 429 (Лимиты)")
                     else:
-                        print(f"[AI] {model} -> 🚫 Ошибка сервера. Статус: {response.status}")
+                        print(f"[AI] {model} -> 🚫 Ошибка {response.status}")
                         
             except asyncio.TimeoutError:
-                print(f"[AI] {model} -> ⏳ Истек таймаут 3.5 сек (Модель слишком медленная)")
+                print(f"[AI] {model} -> ⏳ Превышен таймаут генерации")
             except Exception as e:
-                print(f"[AI] {model} -> 💥 Непредвиденная ошибка: {e}")
-                continue 
+                print(f"[AI] {model} -> Ошибка: {e}")
+                continue
+
                 
     print("[AI] 🛑 Ни одна модель из списка не смогла сгенерировать опрос.")
     return None
