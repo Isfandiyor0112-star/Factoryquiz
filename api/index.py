@@ -39,12 +39,15 @@ async def generate_ai_quiz():
     )
     
     user_prompt = (
-        "Zavoddagi ish jarayoniga oid (masalan: qog'oz pressi, stanoklar, yuk ko'taruvchilar, "
-        "yong'in xavfi yoki jarohatlanganda birinchi yordam) 1 ta qiziqarli va o'ziga xos test savolini o'ylab top. "
-        "DIQQAT: Variantlar to'liq matn bilan yozilsin (shunchaki A, B, C yoki X, Y, Z deb emas!). "
-        "Mening shablon matnimni nusxalama. Javobni FAQAT mana bu JSON formatida qaytar, boshqa hech narsa yozma:\n"
-        '{"question": "Savol matni", "options": ["1-javob", "2-javob", "3-javob", "4-javob"], "correct_id": 0}'
+        "ProfPack qog'ozni qayta ishlash zavodi ishchilari uchun real hayotiy test yarating. "
+        "DIQQAT: IT, dasturlash yoki kompyuterlarga oid SAVOLLAR TUZISH MUTLAQO TAQIQLANADI! "
+        "Savol faqat va faqat sexdagi real narsalar haqida bo'lsin: qog'oz pressi, stanoklar, "
+        "yuk ko'targichlar (karr), yong'in o'chirish moslamasi (ognetushitel) yoki jarohatlanganda birinchi yordam. "
+        "To'g'ri javob mantiqan to'g'ri va qisqa bo'lsin va uni HAR DOIM 1-chi variantga qo'ying (correct_id: 0). "
+        "Javobni FAQAT shu formatda qaytaring:\n"
+        '{"question": "Savol matni", "options": ["To\'g\'ri javob matni", "Noto\'g\'ri variant 1", "Noto\'g\'ri variant 2", "Noto\'g\'ri variant 3"], "correct_id": 0}'
     )
+
 
     models_to_try = [
         "google/gemma-4-26b-a4b-it:free",
