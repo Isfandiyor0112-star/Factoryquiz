@@ -50,14 +50,16 @@ async def generate_ai_quiz():
 
 
        # Максимально надежный и расширенный список моделей
+        # Проверенные, ультрабыстрые и легкие бесплатные модели
+    # Они выдают ответ за 1-2 секунды, исключая таймауты
     models_to_try = [
-        "meta-llama/llama-3-8b-instruct:free",        # Ультрабыстрая, стабильная, отличный JSON
-        "google/gemma-4-26b-a4b-it:free",              # Наш фаворит, если свободен
-        "nvidia/nemotron-nano-12b-v2-vl:free",         # Тот самый щит, который уже спасал
-        "mistralai/mistral-7b-instruct:free",          # Очень стабильный европеец
-        "openai/gpt-oss-120b:free",                    # Умная, но тяжелая
-        "openai/gpt-oss-20b:free"                      # Быстрее, чем старший брат
+        "meta-llama/llama-3-8b-instruct:free", # Базовая Llama 3 (быстрая)
+        "google/gemma-2-9b-it:free",           # Gemma 2 поколение (очень шустрая)
+        "meta-llama/llama-3.1-8b-instruct:free", # Обновленная Llama 3.1
+        "nvidia/nemotron-nano-12b-v2-vl:free", # Твой проверенный щит
+        "google/gemma-4-26b-a4b-it:free"       # На подхвате
     ]
+
     
     async with aiohttp.ClientSession() as session:
         for model in models_to_try:
