@@ -40,34 +40,68 @@ async def generate_ai_quiz():
     user_prompt = (
         "Zavoddagi ish jarayoniga oid (masalan: qog'oz pressi, stanoklar, yuk ko'taruvchilar, "
         "yong'in xavfi yoki jarohatlanganda birinchi yordam) 1 ta qiziqarli va o'ziga xos test savolini o'ylab top. "
-        "DIQQAT: Mening misolimni so'zma-so'z nusxalama! Variantlar faqat bitta harf bo'lmasligi kerak, to'liq javob yozilsin. "
-        "Javobni FAQAT mana bu JSON formatida qaytar, boshqa hech qanday tekst qo'shma:\n"
-        '{"question": "Savol matni", "options": ["1-javob matni", "2-javob matni", "3-javob matni", "4-javob matni"], "correct_id": 0}'
+        "DIQQAT: Variantlar to'liq matn bilan yozilsin (shunchaki A, B, C yoki X, Y, Z deb emas!). "
+        "Mening shablon matnimni nusxalama. Javobni FAQAT mana bu JSON formatida qaytar, boshqa hech narsa yozma:\n"
+        '{"question": "Savol matni", "options": ["1-javob", "2-javob", "3-javob", "4-javob"], "correct_id": 0}'
     )
+
+    models_to_try = [
+        "google/gemma-4-26b-a4b-it:free",
+        "openai/gpt-oss-120b:free",
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+        "nvidia/nemotron-nano-12b-v2-vl:free"
+    ]
     
-    data = {
-        # Меняем модель на умную Gemma от Google
-        "model": "google/gemma-4-26b-a4b-it:free", 
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "temperature": 0.4  # Чуть-чуть добавим сообразительности, но держим в узде
-    }
-    
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=data, timeout=9) as response:
-                result = await response.json()
-                content = result['choices'][0]['message']['content'].strip()
+    async with aiohttp.ClientSession() as session:
+        for model in models_to_try:
+            data = {
+                "model": model, 
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": 0.3,
+                "max_tokens": 400
+            }
+            
+            try:
+                print(f"[AI] Запрос к модели: {model}")
+                async with session.post(url, headers=headers, json=data, timeout=3.5) as response:
+                    
+                    if response.status == 200:
+                        print(f"[AI] {model} -> ✅ Статус 200 OK")
+                        res_json = await response.json()
+                        content = res_json['choices'][0]['message']['content'].strip()
+                        
+                        start = content.find('{')
+                        end = content.rfind('}') + 1
+                        
+                        if start != -1 and end != 0:
+                            quiz_json = json.loads(content[start:end])
+                            
+                            opts = quiz_json.get("options", [])
+                            if len(opts) == 4 and len(str(opts[0])) > 2:
+                                print(f"[AI] {model} -> Формат JSON валидный. Возвращаем!")
+                                return quiz_json
+                            else:
+                                print(f"[AI] {model} -> ⚠️ Брак (пустые варианты или буквы вместо текста)")
+                        else:
+                            print(f"[AI] {model} -> ❌ Текст не содержит JSON-структуру")
+                            
+                    elif response.status == 429:
+                        print(f"[AI] {model} -> ❌ Ошибка 429 Лимит запросов (Too Many Requests)")
+                    else:
+                        print(f"[AI] {model} -> 🚫 Ошибка сервера. Статус: {response.status}")
+                        
+            except asyncio.TimeoutError:
+                print(f"[AI] {model} -> ⏳ Истек таймаут 3.5 сек (Модель слишком медленная)")
+            except Exception as e:
+                print(f"[AI] {model} -> 💥 Непредвиденная ошибка: {e}")
+                continue 
                 
-                # Поиск и очистка JSON
-                start = content.find('{')
-                end = content.rfind('}') + 1
-                return json.loads(content[start:end])
-    except Exception as e:
-        print(f"[AI] Oшибка генерации: {e}")
-        return None
+    print("[AI] 🛑 Ни одна модель из списка не смогла сгенерировать опрос.")
+    return None
+
 
 
 # --- ХЭНДЛЕРЫ КОМАНД ---
